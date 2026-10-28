@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brainrot-tts"
+version = "0.1.0"
+description = "Turn text into a narrated video with word-by-word highlighted subtitles, fully locally."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "brainrot-tts contributors" }]
+keywords = ["tts", "kokoro", "subtitles", "ass", "ffmpeg", "video"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+  # Kokoro is the default (and currently only) TTS backend. It pulls in
+  # torch, misaki (G2P + word timestamps) and huggingface-hub.
+  "kokoro>=0.9.4,<1.0",
+  "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[project.scripts]
+brainrot-tts = "brainrot_tts.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["brainrot_tts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["kokoro", "kokoro.*", "misaki", "misaki.*"]
+ignore_missing_imports = true

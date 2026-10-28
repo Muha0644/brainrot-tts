@@ -1,0 +1,3 @@
+The system consists of three components: a local text-to-speech engine, a subtitle generator, and FFmpeg.
+
+Each word is highlighted as it is spoken, so the subtitles stay in sync with the narration. Everything runs on your machine.

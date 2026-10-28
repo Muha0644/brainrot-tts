@@ -4,8 +4,7 @@ The purpose of the application is to turn supplied text into a narrated video wi
 
 ## IMPORTANT CONSTRAINTS
 - Everything must run locally, no cloud APIs.
-- No external HTTP/API calls during normal operation.
-- Input is TEXT ONLY. Do not implement PDF, DOCX, OCR, web scraping, or document extraction.
+- Input is TEXT ONLY. Do not implement PDF, DOCX, OCR, web scraping, or document extraction yet.
 - Options should be command-line arguments.
 - Use FFmpeg for final video composition/encoding.
 - The code should be cleanly structured so the TTS backend can be replaced later.
@@ -65,7 +64,10 @@ Generate ASS/SSA subtitles rather than SRT. The subtitles should display several
 
 Example concept:
 ```
-    The system consists of three components.
+    **The** system consists of three components.
+    The **system** consists of three components.
+    The system **consists** of three components.
+    ...
 ```
 while the spoken word changes appearance as narration progresses. Use ASS karaoke tags or another robust ASS mechanism where appropriate. The subtitle generator should be independent from the TTS implementation.
 Expose command-line options for at least:
@@ -159,7 +161,6 @@ Do not introduce unnecessary frameworks. Use argparse or another lightweight CLI
 - Python 3.11+.
 - Clear error messages.
 - No hard-coded absolute paths.
-- No global mutable state.
 - Use pathlib.
 - Use subprocess safely rather than shell=True.
 - Proper temporary-file cleanup.
@@ -198,24 +199,20 @@ Provide `brainrot-tts --help`
 ## DOCUMENTATION
 Create a README covering:
 1. What the program does.
-2. Requirements.
 3. Installation.
-4. Installing/configuring Kokoro locally.
-5. Installing FFmpeg.
-6. Downloading/using voices/models.
-7. Basic usage.
-8. All important CLI arguments.
-9. Example commands.
-11. How word timing works.
-12. How subtitle styling works.
-14. How to add another TTS backend.
-
-Do not claim a feature is supported unless it actually works with the selected dependencies.
+3.1. Requirements.
+3.2. Installing/configuring Kokoro locally.
+3.3. Downloading/using voices/models.
+4. Basic usage.
+5. All important CLI arguments.
+6. Example commands.
+7. How word timing works
+8. How subtitle styling works.
+9. How to add another TTS backend.
 
 ## IMPLEMENTATION PROCESS
 Before coding:
 1. Inspect the current Kokoro Python API and determine the most reliable way to obtain audio and word-level timing locally.
 2. Verify the exact API rather than inventing one.
-3. Determine whether timing is genuinely word-level or phoneme/character-level and implement the appropriate conversion.
-4. Check current FFmpeg behavior for looping/shortening background video and ASS subtitle rendering.
-5. Choose dependencies that are actively maintained and compatible with modern Python.
+3. Check current FFmpeg behavior for looping/shortening background video and ASS subtitle rendering.
+4. Choose dependencies that are actively maintained and compatible with modern Python.
