@@ -6,9 +6,9 @@ karaoke fill (which leaves every already-spoken word highlighted): at any
 moment exactly one word is highlighted, and the text/timing remain independent
 of the TTS engine.
 
-An optional second, lower-layer event draws an opaque box behind the line.  The
-box and text layers use identical fonts/metrics, so the box does not move when
-the highlighted word changes.
+An optional lower-layer drawing event renders a rounded, semi-transparent box
+behind the line.  A subtle same-colour stroke can also be applied to the text
+to fake a heavier weight than the installed font family provides.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from brainrot_tts.errors import ConfigError, SubtitleError
-from brainrot_tts.subtitles.grouping import SubtitleLine
+from brainrot_tts.subtitles.grouping import SubtitleLine, estimate_text_width_em
 
 #: ASS uses &HAABBGGRR (note the reversed RGB order).
 _NAMED_COLORS: dict[str, tuple[int, int, int]] = {
@@ -164,6 +164,10 @@ class SubtitleStyle:
     margin_bottom: int = 90
     margin_lr: int = 40
     bold: bool = True
+    #: Extra same-colour stroke width in pixels; fakes a heavier font weight.
+    font_stroke: float = 0.0
+    #: Rounded subtitle box corner radius in pixels.  0 draws square corners.
+    corner_radius: float = 0.0
     extra: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -173,6 +177,10 @@ class SubtitleStyle:
             raise ConfigError("Outline width must be zero or positive.")
         if self.box_padding < 0:
             raise ConfigError("Box padding must be zero or positive.")
+        if self.font_stroke < 0:
+            raise ConfigError("Font stroke must be zero or positive.")
+        if self.corner_radius < 0:
+            raise ConfigError("Corner radius must be zero or positive.")
         if self.position not in _ALIGNMENT:
             raise ConfigError(f"Invalid position {self.position!r}. Choose bottom, center or top.")
         if not self.font or "\n" in self.font or "," in self.font:
@@ -229,7 +237,13 @@ def _active_line(line: SubtitleLine, active_index: int, style: SubtitleStyle) ->
     for index, word in enumerate(line.words):
         escaped = escape_ass_text(word.text)
         if index == active_index:
-            parts.append(f"{{\\c{highlight}}}{escaped}{{\\c{base}}}")
+            if style.font_stroke > 0:
+                parts.append(
+                    f"{{\\c{highlight}\\3c{highlight}}}{escaped}"
+                    f"{{\\c{base}\\3c{base}}}"
+                )
+            else:
+                parts.append(f"{{\\c{highlight}}}{escaped}{{\\c{base}}}")
         else:
             parts.append(escaped)
     return " ".join(parts)
@@ -237,6 +251,76 @@ def _active_line(line: SubtitleLine, active_index: int, style: SubtitleStyle) ->
 
 def _plain_line(line: SubtitleLine) -> str:
     return " ".join(escape_ass_text(word.text) for word in line.words)
+
+
+#: Cubic bezier control-point offset for approximating a quarter circle.
+_BEZIER_K = 0.5522847498
+#: Extra box width (in em) to absorb font-metric estimation error.
+BOX_WIDTH_SAFETY_EM = 0.15
+
+
+def _rounded_rect_path(width: float, height: float, radius: float) -> str:
+    """Return an ASS drawing path for a rounded rectangle anchored at (0, 0)."""
+
+    radius = max(0.0, min(radius, width / 2, height / 2))
+    x0, y0, x1, y1 = 0.0, 0.0, width, height
+    k = _BEZIER_K * radius
+    return (
+        f"m {x0 + radius:.2f} {y0:.2f} "
+        f"l {x1 - radius:.2f} {y0:.2f} "
+        f"b {x1 - radius + k:.2f} {y0:.2f} {x1:.2f} {y0 + radius - k:.2f} "
+        f"{x1:.2f} {y0 + radius:.2f} "
+        f"l {x1:.2f} {y1 - radius:.2f} "
+        f"b {x1:.2f} {y1 - radius + k:.2f} {x1 - radius + k:.2f} {y1:.2f} "
+        f"{x1 - radius:.2f} {y1:.2f} "
+        f"l {x0 + radius:.2f} {y1:.2f} "
+        f"b {x0 + radius - k:.2f} {y1:.2f} {x0:.2f} {y1 - radius + k:.2f} "
+        f"{x0:.2f} {y1 - radius:.2f} "
+        f"l {x0:.2f} {y0 + radius:.2f} "
+        f"b {x0:.2f} {y0 + radius - k:.2f} {x0 + radius - k:.2f} {y0:.2f} "
+        f"{x0 + radius:.2f} {y0:.2f}"
+    )
+
+
+def _box_geometry(
+    line: SubtitleLine,
+    style: SubtitleStyle,
+    play_res_x: int,
+    play_res_y: int,
+) -> tuple[float, float, float, float, float]:
+    """Compute rounded-box geometry in script pixels.
+
+    libass positions text using the font's line height, which is ``font_size``
+    for the bundled sans fonts, and applies ``MarginV`` to the edge of that
+    line box.  We mirror that so the rounded box hugs the glyphs.
+    """
+
+    padding = style.box_padding
+    stroke = style.font_stroke
+    box_w = (
+        estimate_text_width_em(line.text) * style.font_size
+        + BOX_WIDTH_SAFETY_EM * style.font_size
+        + 2 * stroke
+        + 2 * padding
+    )
+    box_h = style.font_size + 2 * stroke + 2 * padding
+
+    x = (play_res_x - box_w) / 2
+    if style.position == "top":
+        y = style.margin_bottom - padding - stroke
+    elif style.position == "center":
+        y = (play_res_y - box_h) / 2
+    else:  # bottom
+        y = play_res_y - style.margin_bottom - style.font_size - padding - stroke
+
+    radius = min(style.corner_radius, box_w / 2, box_h / 2)
+    return x, y, box_w, box_h, radius
+
+
+def _box_drawing(line: SubtitleLine, style: SubtitleStyle, play_res_x: int, play_res_y: int) -> str:
+    x, y, box_w, box_h, radius = _box_geometry(line, style, play_res_x, play_res_y)
+    path = _rounded_rect_path(box_w, box_h, radius)
+    return f"{{\\an7\\pos({x:.2f},{y:.2f})\\p1\\bord0\\shad0}}{path}"
 
 
 def _line_end_time(lines: Sequence[SubtitleLine], index: int, hold: float) -> float:
@@ -295,15 +379,35 @@ def render_ass(
                 "BrainrotBox",
                 font=style.font,
                 size=style.font_size,
-                # Text in the box layer is fully transparent; only its box is
-                # visible.  The text layer above draws the actual glyphs.
+                # The box event is an ASS drawing; its fill uses PrimaryColour.
+                primary=style.box_color,
+                secondary=style.box_color,
+                outline="&H00000000",
+                back="&H00000000",
+                bold=style.bold,
+                border_style=1,
+                outline_width=0,
+                alignment=alignment,
+                margin_lr=style.margin_lr,
+                margin_v=margin_v,
+            )
+        )
+
+    if style.font_stroke > 0:
+        header.append(
+            _style_line(
+                "BrainrotOutline",
+                font=style.font,
+                size=style.font_size,
+                # Transparent fill, visible outline only.  The text layer above
+                # paints the glyphs plus a same-colour stroke of `font_stroke`.
                 primary="&HFF000000",
                 secondary="&HFF000000",
-                outline=style.box_color,
-                back=style.box_color,
+                outline=style.outline_color,
+                back="&H00000000",
                 bold=style.bold,
-                border_style=3,
-                outline_width=style.box_padding,
+                border_style=1,
+                outline_width=style.outline_width + style.font_stroke,
                 alignment=alignment,
                 margin_lr=style.margin_lr,
                 margin_v=margin_v,
@@ -317,11 +421,13 @@ def render_ass(
             size=style.font_size,
             primary=style.text_color,
             secondary=style.text_color,
-            outline=style.outline_color,
+            # In heavy mode the text layer's outline is the same colour as the
+            # fill; a lower BrainrotOutline layer supplies the dark border.
+            outline=style.text_color if style.font_stroke > 0 else style.outline_color,
             back="&H00000000",
             bold=style.bold,
             border_style=1,
-            outline_width=style.outline_width,
+            outline_width=style.font_stroke if style.font_stroke > 0 else style.outline_width,
             alignment=alignment,
             margin_lr=style.margin_lr,
             margin_v=margin_v,
@@ -335,20 +441,35 @@ def render_ass(
         ]
     )
 
+    text_layer = 2 if style.font_stroke > 0 else 1
     events: list[tuple[int, int, int, str, str]] = []
     for line_index, line in enumerate(lines):
         line_start = max(0.0, line.words[0].start)
         line_end = _line_end_time(lines, line_index, hold_seconds)
         cursor = line_start
+        line_start_cs = _to_centiseconds(line_start)
+        line_end_cs = _to_centiseconds(line_end)
+        if line_end_cs <= line_start_cs:
+            line_end_cs = line_start_cs + 1
 
         # One box event per line is enough; the per-word events above it only
         # change colour, not geometry.
         if style.box:
-            box_start_cs = _to_centiseconds(line_start)
-            box_end_cs = _to_centiseconds(line_end)
-            if box_end_cs <= box_start_cs:
-                box_end_cs = box_start_cs + 1
-            events.append((box_start_cs, box_end_cs, 0, "BrainrotBox", _plain_line(line)))
+            events.append(
+                (
+                    line_start_cs,
+                    line_end_cs,
+                    0,
+                    "BrainrotBox",
+                    _box_drawing(line, style, play_res_x, play_res_y),
+                )
+            )
+
+        # One static dark-outline pass per line supports the fake-heavy glyphs.
+        if style.font_stroke > 0:
+            events.append(
+                (line_start_cs, line_end_cs, 1, "BrainrotOutline", _plain_line(line))
+            )
 
         for word_index, word in enumerate(line.words):
             start = max(cursor, word.start, line_start)
@@ -367,7 +488,7 @@ def render_ass(
                 (
                     start_cs,
                     end_cs,
-                    1,
+                    text_layer,
                     "BrainrotText",
                     _active_line(line, word_index, style),
                 )

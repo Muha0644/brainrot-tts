@@ -48,12 +48,47 @@ def test_resolve_style_auto_sizes_and_parses_colours() -> None:
     video = VideoInfo(Path("bg.mp4"), 1080, 1920, 10.0, 30.0)
     style = _resolve_style(config, video)
     assert style.font_size == 119
-    assert style.margin_bottom == 154
+    assert style.margin_bottom == 768
     assert style.margin_lr == 43
     assert style.text_color == "&H00FFFFFF"
     assert style.highlight_color == "&H0000D4FF"
     assert style.box_color == "&H00000000"
     assert style.box is True
+    assert style.bold is True
+    assert style.font_stroke > 0
+    assert style.corner_radius > 0
+
+
+def test_default_style_uses_semi_transparent_box_and_mid_lower_margin() -> None:
+    config = PipelineConfig(
+        input_path=Path("in.txt"),
+        video_path=Path("bg.mp4"),
+        output_path=Path("out.mp4"),
+        work_dir=Path("work"),
+    )
+    video = VideoInfo(Path("bg.mp4"), 1920, 1080, 10.0, 30.0)
+    style = _resolve_style(config, video)
+    assert config.background_opacity == 0.7
+    # 0.7 opacity -> ASS alpha 0x4D (about 30% transparent).
+    assert style.box_color == "&H4D000000"
+    assert style.margin_bottom == 432
+    assert config.font_weight == "heavy"
+    assert style.font_stroke == pytest.approx(1.34)
+    assert style.corner_radius == pytest.approx(23.4)
+
+
+def test_normal_weight_disables_bold_and_stroke() -> None:
+    config = PipelineConfig(
+        input_path=Path("in.txt"),
+        video_path=Path("bg.mp4"),
+        output_path=Path("out.mp4"),
+        work_dir=Path("work"),
+        font_weight="normal",
+    )
+    video = VideoInfo(Path("bg.mp4"), 1920, 1080, 10.0, 30.0)
+    style = _resolve_style(config, video)
+    assert style.bold is False
+    assert style.font_stroke == 0.0
 
 
 def test_read_input_text_rejects_empty_and_accepts_utf8(tmp_path: Path) -> None:

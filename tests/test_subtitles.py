@@ -106,16 +106,41 @@ def test_render_ass_highlights_exactly_one_word() -> None:
 
 def test_render_ass_box_layer() -> None:
     words = [WordTiming("Hello", 0.0, 0.4), WordTiming("world", 0.4, 0.9)]
-    ass = render_ass([SubtitleLine(words)], _style(box=True), play_res_x=720, play_res_y=1280)
+    ass = render_ass(
+        [SubtitleLine(words)],
+        _style(box=True, corner_radius=12),
+        play_res_x=720,
+        play_res_y=1280,
+    )
     dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
     assert len(dialogues) == 3  # one box event + one text event per word
     assert dialogues[0].startswith("Dialogue: 0,")
     assert dialogues[1].startswith("Dialogue: 1,")
     assert "BrainrotBox" in ass
-    assert "BorderStyle" in ass
-    # Box layer text has no colour overrides and covers the whole line.
-    assert dialogues[0].endswith("Hello world")
+    # The box is an ASS vector drawing with a rounded rectangle path.
+    assert "\\p1" in dialogues[0]
+    assert "\\an7\\pos(" in dialogues[0]
+    assert " b " in dialogues[0]
     assert dialogues[1].endswith(r"{\c&H00D4FF&}Hello{\c&HFFFFFF&} world")
+
+
+def test_render_ass_heavy_weight_uses_outline_pass() -> None:
+    words = [WordTiming("Hello", 0.0, 0.4), WordTiming("world", 0.4, 0.9)]
+    ass = render_ass(
+        [SubtitleLine(words)],
+        _style(font_stroke=1.5),
+        play_res_x=720,
+        play_res_y=1280,
+    )
+    assert "BrainrotOutline" in ass
+    dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
+    # one outline pass + one text event per word
+    assert len(dialogues) == 3
+    assert dialogues[0].startswith("Dialogue: 1,")
+    assert dialogues[0].endswith("Hello world")
+    assert dialogues[1].startswith("Dialogue: 2,")
+    # Both fill and stroke colour switch for the active word.
+    assert r"{\c&H00D4FF&\3c&H00D4FF&}Hello{\c&HFFFFFF&\3c&HFFFFFF&}" in dialogues[1]
 
 
 def test_render_ass_position_and_escaping() -> None:

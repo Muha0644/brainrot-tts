@@ -270,16 +270,18 @@ Run `brainrot-tts --help` for the authoritative help screen.
 | --- | --- | --- |
 | `--font FONT` | `Arial` | Installed font family. |
 | `--font-size SIZE` | auto (6.2% of height) | Font size in video pixels. |
+| `--font-weight {normal,bold,heavy}` | `heavy` | Weight; `heavy` adds a subtle same-colour stroke to the bold face. |
 | `--text-color COLOR` | `#FFFFFF` | Base spoken text colour. |
 | `--highlight-color COLOR` | `#FFD400` | Colour of the currently spoken word. |
 | `--outline-color COLOR` | `#000000` | Text outline colour (applies with or without the box). |
 | `--outline-width WIDTH` | auto (~4.5% of font size) | Text outline width in pixels. |
-| `--box` / `--no-box` | box on | Opaque box behind the line, or outline-only. |
+| `--box` / `--no-box` | box on | Rounded box behind the line, or outline-only. |
 | `--background-color COLOR` | `#000000` | Subtitle box colour. |
-| `--background-opacity 0..1` | `1.0` | Box opacity (0 transparent, 1 opaque). |
+| `--background-opacity 0..1` | `0.7` | Box opacity (0 transparent, 1 opaque). |
 | `--box-padding PIXELS` | auto (~16% of font size) | Padding between text and box edge. |
+| `--corner-radius PIXELS` | auto (~35% of font size) | Rounded box corner radius; `0` gives square corners. |
 | `--position {bottom,center,top}` | `bottom` | Vertical placement. |
-| `--margin-bottom PIXELS` | auto (8% of height) | Distance from bottom/top edge. |
+| `--margin-bottom PIXELS` | auto (40% of height) | Distance from bottom/top edge. |
 | `--words-per-line N` | `4` | Maximum words visible at once. |
 
 Colours accept `#RRGGBB`, `RRGGBB`, `#RGB`, `&HAABBGGRR`, `&HBBGGRR`, or basic names
@@ -328,6 +330,9 @@ brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 \
 # Semi-transparent box, custom colours
 brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 \
   --background-opacity 0.65 --text-color '#F5F5F5' --highlight-color '#00E5FF'
+
+# Square corners and the plain bold face
+brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 --corner-radius 0 --font-weight bold
 
 # Force a fresh narration, keep the intermediates
 brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 --regenerate
@@ -425,16 +430,23 @@ The program writes ASS/SSA (not SRT) and lets FFmpeg's `ass` filter burn it in.
 - **PlayRes** is the background video's display resolution (after rotation), so sizes
   and margins are real video pixels. There is no accidental scaling between a 720p and
   a 4K background.
-- **One text Dialogue event per word (plus one box event per line).** Every text event
-  contains the whole line, with the active word wrapped in an ASS colour override. At any
-  moment exactly one word is highlighted; earlier words return to the base colour. This
-  avoids the “progressive fill” behaviour of `\k` karaoke tags, which leaves all
-  previously spoken words highlighted.
-- **Two layers by default.** A lower `BrainrotBox` layer draws an opaque box
-  (ASS `BorderStyle=3`, text alpha fully transparent) and an upper `BrainrotText` layer
-  draws the outlined text. Both layers use the same font, size and margins, so the box
-  does not jitter as the highlight moves. The text outline remains active in box mode;
-  `--no-box` simply drops the box layer for an outline-only look.
+- **One text Dialogue event per word (plus one box event and, in heavy mode, one
+  outline pass per line).** Every text event contains the whole line, with the active
+  word wrapped in ASS colour overrides. At any moment exactly one word is highlighted;
+  earlier words return to the base colour. This avoids the “progressive fill” behaviour
+  of `\k` karaoke tags, which leaves all previously spoken words highlighted.
+- **Rounded box layer.** A lower `BrainrotBox` layer draws a rounded rectangle as an
+  ASS vector drawing (`\p1`), filled with `--background-color` at
+  `--background-opacity`. Rounded corners use cubic bezier arcs with radius
+  `--corner-radius` (auto ≈ 35% of the font size; `0` for square corners). Geometry is
+  derived from the same estimated text width and the style margins, so the box does not
+  jitter as the highlight moves.
+- **Heavy weight.** `--font-weight heavy` (the default) keeps the bold face and adds a
+  subtle same-colour stroke of ≈2% of the font size, faking a weight heavier than most
+  installed families provide. A static lower `BrainrotOutline` layer supplies the dark
+  outer outline, while the per-word text layer switches both fill and stroke colour for
+  the active word. Use `--font-weight bold` for the plain bold face, or `normal` for
+  regular weight.
 - **Grouping** uses `--words-per-line` as a maximum, then:
   1. never crosses a newline from the input text;
   2. respects an estimated width budget based on the video width and font size;
@@ -456,10 +468,12 @@ The program writes ASS/SSA (not SRT) and lets FFmpeg's `ass` filter burn it in.
   substitutes a similar font. Use `fc-list` / `fc-match "Font Name"` to check.
 
 Auto defaults are calculated from the background height: font size ≈ 6.2% of height,
-outline ≈ 4.5% of font size, box padding ≈ 16% of font size, and bottom margin ≈ 8% of
-height. At 1080×1920 this is roughly 119 px text, 5.4 px outline, 19 px padding, 154 px
-bottom margin — large, readable social-video captions. Override any of them with the
-corresponding flag; explicit values are always pixels.
+outline ≈ 4.5% of font size, box padding ≈ 16% of font size, box corner radius ≈ 35% of
+font size, heavy stroke ≈ 2% of font size, and bottom margin ≈ 40% of height. At
+1080×1920 this is roughly 119 px text, 5.4 px outline, 19 px padding, 42 px corners,
+2.4 px heavy stroke, and 768 px bottom margin — large, readable social-video captions
+sitting just below the middle of the frame. Override any of them with the corresponding
+flag; explicit values are always pixels.
 
 ---
 

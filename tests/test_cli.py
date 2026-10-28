@@ -20,6 +20,10 @@ def test_defaults_and_language_inference() -> None:
     assert config.voice == "bm_george"
     assert config.words_per_line == 4
     assert config.box is True
+    assert config.background_opacity == 0.7
+    assert config.margin_bottom is None
+    assert config.font_weight == "heavy"
+    assert config.corner_radius is None
 
 
 def test_explicit_language_wins() -> None:

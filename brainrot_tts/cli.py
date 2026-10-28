@@ -167,6 +167,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="font size in video pixels (default: auto, 6.2%% of video height).",
     )
     subtitle_group.add_argument(
+        "--font-weight",
+        choices=["normal", "bold", "heavy"],
+        default="heavy",
+        help=(
+            "font weight (default: heavy; 'heavy' adds a subtle same-colour "
+            "stroke to the bold face)."
+        ),
+    )
+    subtitle_group.add_argument(
         "--text-color",
         default="#FFFFFF",
         metavar="COLOR",
@@ -194,7 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--box",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="draw an opaque box behind subtitles (default: on; use --no-box for outline-only).",
+        help="draw a rounded box behind subtitles (default: on; use --no-box for outline-only).",
     )
     subtitle_group.add_argument(
         "--background-color",
@@ -205,15 +214,27 @@ def build_parser() -> argparse.ArgumentParser:
     subtitle_group.add_argument(
         "--background-opacity",
         type=float,
-        default=1.0,
+        default=0.7,
         metavar="0..1",
-        help="subtitle box opacity, 0=transparent, 1=opaque (default: 1.0).",
+        help=(
+            "subtitle box opacity, 0=transparent, 1=opaque "
+            "(default: 0.7, semi-transparent)."
+        ),
     )
     subtitle_group.add_argument(
         "--box-padding",
         type=float,
         metavar="PIXELS",
         help="subtitle box padding in pixels (default: auto, ~16%% of font size).",
+    )
+    subtitle_group.add_argument(
+        "--corner-radius",
+        type=float,
+        metavar="PIXELS",
+        help=(
+            "rounded subtitle box corner radius in pixels "
+            "(default: auto, ~35%% of font size; 0 = square corners)."
+        ),
     )
     subtitle_group.add_argument(
         "--position",
@@ -225,7 +246,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--margin-bottom",
         type=int,
         metavar="PIXELS",
-        help="distance from the bottom/top edge in pixels (default: auto, 8%% of height).",
+        help=(
+            "distance from the bottom/top edge in pixels "
+            "(default: auto, 40%% of height — just below the middle)."
+        ),
     )
     subtitle_group.add_argument(
         "--words-per-line",
@@ -288,6 +312,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ConfigError("--outline-width must be zero or positive.")
     if args.box_padding is not None and args.box_padding < 0:
         raise ConfigError("--box-padding must be zero or positive.")
+    if args.corner_radius is not None and args.corner_radius < 0:
+        raise ConfigError("--corner-radius must be zero or positive.")
     if args.margin_bottom is not None and args.margin_bottom < 0:
         raise ConfigError("--margin-bottom must be zero or positive.")
     if args.words_per_line < 1:
@@ -364,6 +390,8 @@ def _config_from_args(args: argparse.Namespace) -> PipelineConfig:
         background_color=args.background_color,
         background_opacity=args.background_opacity,
         box_padding=args.box_padding,
+        corner_radius=args.corner_radius,
+        font_weight=args.font_weight,
         position=args.position,
         margin_bottom=args.margin_bottom,
         words_per_line=args.words_per_line,

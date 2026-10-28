@@ -14,7 +14,12 @@ from pathlib import Path
 
 from brainrot_tts.errors import ConfigError, SubtitleError
 from brainrot_tts.models import TTSOptions, TTSResult, VideoInfo, WordTiming
-from brainrot_tts.subtitles.ass import SubtitleStyle, parse_color, render_ass
+from brainrot_tts.subtitles.ass import (
+    BOX_WIDTH_SAFETY_EM,
+    SubtitleStyle,
+    parse_color,
+    render_ass,
+)
 from brainrot_tts.subtitles.grouping import SubtitleLine, group_words
 from brainrot_tts.tts import create_backend
 from brainrot_tts.video.ffmpeg import (
@@ -52,8 +57,10 @@ class PipelineConfig:
     outline_width: float | None = None
     box: bool = True
     background_color: str = "#000000"
-    background_opacity: float = 1.0
+    background_opacity: float = 0.7
     box_padding: float | None = None
+    corner_radius: float | None = None
+    font_weight: str = "heavy"
     position: str = "bottom"
     margin_bottom: int | None = None
     words_per_line: int = DEFAULT_WORDS_PER_LINE
@@ -92,6 +99,11 @@ def _default_font_size(video_height: int) -> int:
 
 
 def _resolve_style(config: PipelineConfig, video: VideoInfo) -> SubtitleStyle:
+    if config.font_weight not in {"normal", "bold", "heavy"}:
+        raise ConfigError("--font-weight must be normal, bold or heavy.")
+    if config.corner_radius is not None and config.corner_radius < 0:
+        raise ConfigError("--corner-radius must be zero or positive.")
+
     font_size = (
         config.font_size if config.font_size is not None else _default_font_size(video.height)
     )
@@ -105,10 +117,18 @@ def _resolve_style(config: PipelineConfig, video: VideoInfo) -> SubtitleStyle:
         if config.box_padding is not None
         else max(6.0, round(font_size * 0.16, 1))
     )
+    corner_radius = (
+        config.corner_radius
+        if config.corner_radius is not None
+        else round(font_size * 0.35, 1)
+    )
+    font_stroke = (
+        max(0.5, round(font_size * 0.02, 2)) if config.font_weight == "heavy" else 0.0
+    )
     margin_bottom = (
         config.margin_bottom
         if config.margin_bottom is not None
-        else max(20, round(video.height * 0.08))
+        else max(20, round(video.height * 0.40))
     )
     margin_lr = max(16, round(video.width * 0.04))
 
@@ -128,6 +148,9 @@ def _resolve_style(config: PipelineConfig, video: VideoInfo) -> SubtitleStyle:
         position=config.position,
         margin_bottom=int(margin_bottom),
         margin_lr=int(margin_lr),
+        bold=config.font_weight != "normal",
+        font_stroke=float(font_stroke),
+        corner_radius=float(corner_radius),
     )
 
 
@@ -288,7 +311,15 @@ def _generate_subtitles(
     ass_path: Path,
 ) -> tuple[SubtitleStyle, list[SubtitleLine]]:
     style = _resolve_style(config, video)
-    max_width_px = video.width - 2 * style.margin_lr
+    max_width_px = float(video.width - 2 * style.margin_lr)
+    if style.box:
+        # Leave room for the rounded box padding, fake-heavy stroke and the
+        # same small width safety margin used when drawing the box, so a line
+        # never wraps inside a box sized for one line.
+        max_width_px -= (
+            2 * (style.box_padding + style.font_stroke)
+            + BOX_WIDTH_SAFETY_EM * style.font_size
+        )
     lines = group_words(
         words,
         max_words=config.words_per_line,
