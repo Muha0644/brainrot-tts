@@ -6,14 +6,12 @@ Turn a text file into a narrated MP4 with **word-by-word highlighted subtitles**
 text (UTF-8)
    -> Kokoro TTS (local)
    -> audio + word-level timestamps
-   -> ASS subtitles (one active word highlighted at a time)
+   -> .ASS subtitles (one active word highlighted at a time)
    -> FFmpeg (loop/trim background, burn subtitles, mux audio)
    -> result.mp4
 ```
 
 No cloud APIs, no OCR, no document extraction. Input is plain text only.
-
----
 
 ## 1. What the program does
 
@@ -46,11 +44,8 @@ can be added without touching the rest of the pipeline.
 
 ### 2.1 System requirements
 
-- **Python 3.11 or newer** (tested with 3.13).
-- **FFmpeg and ffprobe on `PATH`** (FFmpeg 5+; tested with 7.1), built with **libass**
-  (standard FFmpeg builds include it; check with `ffmpeg -filters | grep ass`). FFmpeg
-  is a *system* dependency, not a Python package. The program fails early with an
-  installation hint if it is missing.
+- **Python 3.11 or newer** (tested with 3.13)
+- **ffmpeg and ffprobe** (FFmpeg 5+; tested with 7.1)
 - A font installed on the system for subtitle rendering. The default is **Arial**;
   libass substitutes a similar sans font (for example Nimbus Sans/Liberation Sans) when
   Arial is unavailable. Any font family installed through fontconfig can be selected
@@ -58,23 +53,29 @@ can be added without touching the rest of the pipeline.
 - ~2–4 GB of disk space for Python packages and the Kokoro model (torch is the largest
   dependency).
 - Internet access on the **first run** to download the model and voice from Hugging Face.
-  After that, inference is fully offline.
-- CPU inference works. A CUDA or Apple-MPS GPU is optional and selected with
+  After that, everything runs fully offline.
+- CPU inference also works. A CUDA or Apple-MPS GPU is optional and selected with
   `--device cuda` / `--device mps` (or automatically with `--device auto`).
 
 FFmpeg install examples:
 
 ```bash
+# Arch
+sudo pacman -Syu ffmpeg
+
 # Debian / Ubuntu
 sudo apt install ffmpeg
 
 # Fedora
 sudo dnf install ffmpeg
 
-# macOS (Homebrew)
+# OpenSUSE
+sudo zypper in ffmpeg
+
+# macOS
 brew install ffmpeg
 
-# Windows (winget)
+# Windows
 winget install Gyan.FFmpeg
 ```
 
@@ -90,18 +91,12 @@ The Python dependencies are declared in `pyproject.toml`. The important ones are
 | `huggingface-hub` | model/voice downloads and cache (pulled in by Kokoro) |
 | `numpy` | audio assembly and WAV writing |
 
-`ffmpeg` is **not** installable through pip here; it must be installed as a system
-program. `espeak-ng` is bundled through `espeakng-loader` for English out-of-dictionary
-words, so a separate system `espeak-ng` install is normally not required.
-
----
-
 ## 3. Installation
 
 ### 3.1 Create an environment and install the project
 
 ```bash
-git clone <this-repository>
+git clone github.com/Muha0644/brainrot-tts
 cd brainrot-tts
 
 python3 -m venv .venv
@@ -139,13 +134,10 @@ pip install -e .
 
 The Kokoro backend uses the official [`kokoro`](https://github.com/hexgrad/kokoro)
 Python package and `misaki` for G2P and timestamps. No separate Kokoro server or
-checkpoint download step is needed: the first call to `KPipeline` downloads the model.
+checkpoint download step is needed: the first call to `KPipeline` downloads the model **automatically**.
 
 - Model repository: `hexgrad/Kokoro-82M` (~330 MB).
 - Voices: individual `voices/<name>.pt` files (~1 MB each) from the same repository.
-- Cache location: Hugging Face's cache, usually `~/.cache/huggingface/hub`.
-- Override the cache location with `HF_HOME=/path/to/cache` (or `HF_HUB_CACHE` /
-  the legacy `HUGGINGFACE_HUB_CACHE`).
 - Offline use after the first download:
 
   ```bash
@@ -183,7 +175,7 @@ Voice prefixes select the language:
 | `zf_` / `zm_` | Mandarin Chinese | `zh`, `z` |
 
 If `--lang` is omitted, it is inferred from the voice name. A voice can also be a local
-`.pt` file path (`--voice ./voices/my_voice.pt`); pass `--lang` explicitly if that voice
+`.pt` file path (`--voice ./voices/my_custom_voice.pt`); pass `--lang` explicitly if that voice
 is not English (the default is `en-us` for local voice files).
 
 Japanese and Chinese also need the optional misaki extras, which are not installed by
@@ -206,26 +198,19 @@ those languages is estimated proportionally within each synthesized chunk. See
 ```bash
 brainrot-tts \
   --input inputs/example.txt \
-  --video background.mp4 \
-  --output result.mp4 \
+  --video inputs/background.mp4 \
+  --output outpus/result.mp4 \
   --voice af_heart
 ```
 
 or with short options:
 
 ```bash
-brainrot-tts -i text.txt -v background.mp4 -o result.mp4 -V am_adam
+brainrot-tts -i inputs/text.txt -v inputs/background.mp4 -o outputs/result.mp4 -V am_adam
 ```
 
 If `--output` is omitted, the output is placed next to the input text with an `.mp4`
 extension (`inputs/example.txt` -> `inputs/example.mp4`).
-
-No background video is bundled. You can generate a simple test background with FFmpeg:
-
-```bash
-ffmpeg -f lavfi -i "testsrc2=size=1080x1920:rate=30:duration=10" \
-  -c:v libx264 -pix_fmt yuv420p background.mp4
-```
 
 The background's original resolution and aspect ratio are preserved (no scaling to a
 fixed canvas; only a one-pixel even-dimension adjustment is applied if needed for
@@ -238,8 +223,6 @@ output stem (`result.work/` for `result.mp4`), containing `audio.wav`, `subtitle
 options reuses the cached narration. Use `--clean` to delete the intermediates after a
 successful render.
 
----
-
 ## 5. Command-line options
 
 Run `brainrot-tts --help` for the authoritative help screen.
@@ -250,14 +233,14 @@ Run `brainrot-tts --help` for the authoritative help screen.
 | --- | --- | --- |
 | `-i`, `--input TEXT_FILE` | required | UTF-8 text file to narrate. |
 | `-v`, `--video VIDEO_FILE` | required | Background video. Looped if short, trimmed if long. |
-| `-o`, `--output OUTPUT_MP4` | `<input>.mp4` | Output MP4 path. Must end in `.mp4`. |
+| `-o`, `--output OUTPUT_MP4` | `<input>.mp4` | Output MP4 path. |
 | `--work-dir DIR` | `<output stem>.work` | Where audio, ASS, timing and cache manifest are written. |
 
 ### Speech synthesis
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--backend NAME` | `kokoro` | TTS backend (currently only `kokoro`). |
+| `--backend NAME` | `kokoro` | TTS backend (currently only `kokoro`, more in the future if i feel like it). |
 | `-V`, `--voice VOICE` | `af_heart` | Kokoro voice name or a `.pt` voice file. |
 | `--lang LOCALE` | inferred, else `en-us` | Language/locale (see the table above). |
 | `--speed SPEED` | `1.0` | Speech speed multiplier; must be positive. |
@@ -315,40 +298,32 @@ Note: `-v` is the short form of `--video`; verbose logging is `--verbose` only.
 
 ```bash
 # Basic
-brainrot-tts -i inputs/example.txt -v background.mp4 -o result.mp4
+brainrot-tts -i inputs/example.txt -v inputs/background.mp4 -o outputs/result.mp4
 
 # British voice, slower speech
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 -V bm_george --lang en-gb --speed 0.92
+brainrot-tts -i inputs/text.txt -v inputs/bg.mp4 -o outputs/out.mp4 -V bm_george --lang en-gb --speed 0.92
 
 # Random starting point in the background, 3 words per line
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 --video-offset -1 --seed 42 --words-per-line 3
+brainrot-tts -i inputs/text.txt -v inputs/bg.mp4 -o outputs/out.mp4 --video-offset -1 --seed 42 --words-per-line 3
 
 # Bigger centred captions without a box
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 \
-  --position center --font-size 96 --no-box --outline-width 6
+brainrot-tts -i inputs/text.txt -v inputs/bg.mp4 -o outputs/out.mp4 --position center --font-size 96 --no-box --outline-width 6
 
 # Semi-transparent box, custom colours
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 \
-  --background-opacity 0.65 --text-color '#F5F5F5' --highlight-color '#00E5FF'
+brainrot-tts -i inputs/text.txt -v inputs/bg.mp4 -o outputs/out.mp4 --background-opacity 0.65 --text-color '#F5F5F5' --highlight-color '#00E5FF'
 
 # Square corners and the plain bold face
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 --corner-radius 0 --font-weight bold
+brainrot-tts -i inputs/text.txt -v inputs/bg.mp4 -o outputs/out.mp4 --corner-radius 0 --font-weight bold
 
 # Force a fresh narration, keep the intermediates
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 --regenerate
-
-# Verify the cache hit on a second run, then clean up
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 --clean --overwrite
+brainrot-tts -i intpus/text.txt -v inputs/bg.mp4 -o outputs/out.mp4 --regenerate
 
 # Custom working directory
-brainrot-tts -i text.txt -v bg.mp4 -o out.mp4 --work-dir .cache/run-01
+brainrot-tts -i inputs/text.txt -v inputs/bg.mp4 -o outputs/out.mp4 --work-dir .cache/run-01
 
 # Same as the installed command
-python -m brainrot_tts -i text.txt -v bg.mp4 -o out.mp4
+python -m brainrot_tts ...
 ```
-
----
 
 ## 7. How word timing works
 
@@ -421,8 +396,6 @@ and the manifest matches, narration is reused. Changing the text or TTS options,
 passing `--regenerate`, triggers a fresh synthesis. Subtitle styling is cheap and is
 always regenerated, so you can tweak colours/positions without re-running TTS.
 
----
-
 ## 8. How subtitle styling works
 
 The program writes ASS/SSA (not SRT) and lets FFmpeg's `ass` filter burn it in.
@@ -473,7 +446,7 @@ font size, heavy stroke ≈ 2% of font size, and bottom margin ≈ 40% of height
 1080×1920 this is roughly 119 px text, 5.4 px outline, 19 px padding, 42 px corners,
 2.4 px heavy stroke, and 768 px bottom margin — large, readable social-video captions
 sitting just below the middle of the frame. Override any of them with the corresponding
-flag; explicit values are always pixels.
+flag; **explicit values are always pixels.**
 
 ---
 
@@ -534,8 +507,6 @@ The pipeline only requires that:
   that audio;
 - word text is suitable for display (the subtitle generator handles ASS escaping).
 
----
-
 ## 10. Troubleshooting
 
 **`Required command(s) not found: ffmpeg`** — install FFmpeg and make sure `ffmpeg` and
@@ -571,8 +542,6 @@ regenerated automatically. If you want to keep an old run, use separate `--outpu
 directory if it is empty. It only removes the generated filenames listed above; it never
 empties a custom work directory of other files.
 
----
-
 ## Development
 
 ```bash
@@ -601,7 +570,7 @@ brainrot_tts/
     ass.py           # ASS escaping, styling, one-event-per-word rendering
   video/
     ffmpeg.py        # ffprobe + FFmpeg command/composition
-inputs/example.txt
+inputs/              # suggested input location
 outputs/             # suggested output location
 tests/
 ```
@@ -612,4 +581,4 @@ renamed, so an interrupted render does not leave a half-written `result.mp4`.
 
 ## License
 
-MIT
+MIT; read LICENCE
